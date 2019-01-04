@@ -47,7 +47,7 @@ const getVertices = () => {
 const getEdges = () => {
     for (let i = 0; i < statTable.length; i++) {
         let line = statTable[i];
-        if (line[1] == 'if statement') {
+        if (line[1] == 'if statement' || line[1] == 'while statement') {
             getCondEdges(i);
         }
         else if(line[0] != null && (line[1] == 'variable declaration' || line[1] == 'assignment expression')){
@@ -65,7 +65,7 @@ const getCondEdges = (index) => {
     edges.push([line[0] + '(yes)', yes]);
     if (line[2]) {
         let no = getNo(index, line[5]);
-        edges.push([line[0] + '(no)', no]);
+        edges.push([line[0] + '(no, bottom)', no]);
         let elseIndex= getElseIndex(index);
         let lastNoBlock = getLastBlockOnScope(elseIndex+1);
         edges.push([lastNoBlock, cont]);
@@ -73,7 +73,10 @@ const getCondEdges = (index) => {
     else {
         edges.push([line[0] + '(no)', cont]);
     }
-    edges.push([lastYesBlock, cont]);
+    if(statTable[index][1] == 'while statement')
+        edges.push([lastYesBlock, line[0]]);
+    else
+        edges.push([lastYesBlock, cont]);
 };
 
 const getYes = (index) => {
