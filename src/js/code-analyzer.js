@@ -9,13 +9,13 @@ var vertices;
 var edges;
 var color;
 
-const codeToGraph = (codeToParse) => {
+const codeToGraph = () => {
     let result = '';
-    var parsedObject = esprima.parseScript(codeToParse, { loc: true });
     vertices = [];
     edges = [];
     color = true;
-    getVertices(parsedObject);
+    getVertices();
+    getEdges();
     console.log(vertices);
     console.log(edges);
     if (color) colorNodes();
@@ -27,93 +27,149 @@ const codeToGraph = (codeToParse) => {
     return result;
 };
 
-const getVertices = (code) => {
-    let index = 1, opIndex = 1, condIndex = 1, content = '', edge = '', noElse = -1, whileCond = -1;
+const getVertices = () => {
+    let opIndex = 1, condIndex = 1, content = '';
     for (let i = 0; i < statTable.length; i++) {
         let line = statTable[i];
         let nextType = i < statTable.length - 1 ? statTable[i + 1][1] : line[1];
         let nextScope = i < statTable.length - 1 ? statTable[i + 1][5] : -1;
-        if (line[1] == 'while statement') {
-            color = false;
-            vertices.push([index++, 'op' + opIndex, 'operation', 'null', false, line[5], '']);
-            vertices.push([index++, 'cond' + condIndex, 'condition', line[3], false, line[5], 'while']);
-            if (edge != '')
-                edges.push([edge, 'op' + opIndex]);
-            edges.push(['op' + opIndex++, 'cond' + condIndex]);
-            //edge = 'cond' + condIndex + '(yes)';
-            if (noElse == line[5]) {
-                edges.push([getCondition(line[5]) + '(no)', 'cond' + condIndex]);
-                noElse = -1;
-            }
-            if (nextScope < line[5] && whileCond == line[5] - 1) {
-                edges.push(['op' + opIndex, getWhile(line[5] - 1)]);
-            }
-            else edge = 'cond' + condIndex + '(yes)';
-            if (whileCond == line[5]) {
-                edges.push([getCondition(line[5]) + '(no, bottom)', 'cond' + condIndex]);
-                whileCond = -1;
-            }
-            whileCond = line[5];
+        if (line[1] == 'while statement' || line[1] == 'if statement') {
+            condVertex(line, condIndex, opIndex);
             condIndex++;
         }
-        else if (line[1] == 'if statement') {
-            vertices.push([index++, 'cond' + condIndex, 'condition', line[3], condDict[line[0]].value, line[5], '']);
-            if (edge != '')
-                edges.push([edge, 'cond' + condIndex]);
-            //edge = 'cond' + condIndex + '(yes)';
-            if (noElse == line[5]) {
-                edges.push([getCondition(line[5]) + '(no)', 'cond' + condIndex]);
-                noElse = -1;
-            }
-            if (nextScope < line[5] && whileCond == line[5] - 1) {
-                edges.push(['op' + opIndex, getWhile(line[5] - 1)]);
-            }
-            else edge = 'cond' + condIndex + '(yes)';
-            if (whileCond == line[5]) {
-                edges.push([getCondition(line[5]) + '(no, bottom)', 'cond' + condIndex]);
-                whileCond = -1;
-            }
-            if (!line[2])
-                noElse = line[5];
-            condIndex++;
+        else if (line[1] != 'else statement') {
+            content = blockVertex(content, nextType, opIndex, line, nextScope);
+            opIndex = content == '' ? opIndex + 1 : opIndex;
         }
-        else if (line[1] == 'else statement') {
-            edge = getCondition(line[5]) + '(no, bottom)';
+    }
+};
+
+const getEdges = () => {
+    for (let i = 0; i < statTable.length; i++) {
+        let line = statTable[i];
+        if (line[1] == 'if statement') {
+            getCondEdges(i);
         }
-        else {
-            if ((nextType == 'variable declaration' || nextType == 'assignment expression' || nextType == 'return statement') && line[5] == nextScope) {
-                content += line[4] + '\n';
-            }
-            else {
-                content += line[4];
-                vertices.push([index++, 'op' + opIndex, 'operation', content, false, line[5], '']);
-                if (edge != '') {
-                    edges.push([edge, 'op' + opIndex]);
-                    edge = '';
-                }
-                if (noElse == line[5]) {
-                    edges.push([getCondition(line[5]) + '(no)', 'op' + opIndex]);
-                    noElse = -1;
-                }
-                if (nextScope < line[5] && whileCond == line[5] - 1) {
-                    edges.push(['op' + opIndex, getWhile(line[5] - 1)]);
-                }
-                else edge = 'op' + opIndex;
-                if (whileCond == line[5]) {
-                    edges.push([getCondition(line[5]) + '(no, bottom)', 'op' + opIndex]);
-                    whileCond = -1;
-                }
-                opIndex++;
-                content = '';
+        else if(line[0] != null && (line[1] == 'variable declaration' || line[1] == 'assignment expression')){
+            let dest = getNext(i, line[5]);
+            if(dest != null)
+                edges.push([line[0], dest]);
+        }
+    }
+};
+
+const getCondEdges = (index) => {
+    let yes = getYes(index), line = statTable[index];
+    let cont = getContinuation(index, line[5]);
+    let lastYesBlock = getLastBlockOnScope(index+1);
+    edges.push([line[0] + '(yes)', yes]);
+    if (line[2]) {
+        let no = getNo(index, line[5]);
+        edges.push([line[0] + '(no)', no]);
+        let elseIndex= getElseIndex(index);
+        let lastNoBlock = getLastBlockOnScope(elseIndex+1);
+        edges.push([lastNoBlock, cont]);
+    }
+    else {
+        edges.push([line[0] + '(no)', cont]);
+    }
+    edges.push([lastYesBlock, cont]);
+};
+
+const getYes = (index) => {
+    for (let i = index+1; i < statTable.length; i++) {
+        if(statTable[i][0] != null)
+            return statTable[i][0];
+    }
+};
+
+const getNo = (index, scope) => {
+    for (let i = index+1; i < statTable.length; i++) {
+        if(statTable[i][1] == 'else statement' && statTable[i][5] == scope){
+            index = i;
+            break;
+        }
+    }
+    for (let i = index; i < statTable.length; i++) {
+        if(statTable[i][0] != null)
+            return statTable[i][0];
+    }
+};
+
+const getContinuation = (index, scope) => {
+    for (let i = index+1; i < statTable.length; i++) {
+        if(statTable[i][0] != null && statTable[i][1] != 'else statement' && statTable[i][5] <= scope)
+            return statTable[i][0];
+    }
+};
+
+const getLastBlockOnScope = (index) => {
+    let scope = statTable[index][5];
+    let lastIndex = index;
+    for (let i = index+1; i < statTable.length; i++) {
+        if(statTable[i][0] != null){
+            if(statTable[i][5] == scope)
+                lastIndex = i;
+            else if(statTable[i][5] < scope){
+                return statTable[lastIndex][1] == 'if statement' || statTable[lastIndex][1] == 'while statement'? statTable[lastIndex][0]+'(no)' : statTable[lastIndex][0];
             }
         }
+        else if(statTable[i][1] == 'else statement')
+        return statTable[lastIndex][1] == 'if statement' || statTable[lastIndex][1] == 'while statement'? statTable[lastIndex][0]+'(no)' : statTable[lastIndex][0];
+    }
+    return statTable[index][0];
+};
+
+const getElseIndex = (index) => {
+    let scope = statTable[index][5];
+    for(let i=index; i<statTable.length; i++){
+        if(statTable[i][1] == 'else statement' && statTable[i][5] == scope)
+            return i;
+    }
+};
+
+const getNext = (index, scope) => {
+    for (let i = index+1; i < statTable.length; i++) {
+        if(statTable[i][5] != scope)
+            return null;
+        if(statTable[i][0] != null)
+            return statTable[i][0];
+    }
+};
+
+const condVertex = (line, condIndex, opIndex) => {
+    if (line[1] == 'while statement') {
+        color = false;
+        vertices.push(['cond' + condIndex, 'condition', line[3], false, line[5], 'while']);
+        line[0] = 'cond' + condIndex;
+    }
+    else if (line[1] == 'if statement') {
+        vertices.push(['cond' + condIndex, 'condition', line[3], condDict[line[0]].value, line[5], '']);
+        line[0] = 'cond' + condIndex;
+    }
+};
+
+const blockVertex = (content, nextType, opIndex, line, nextScope) => {
+    if ((nextType == 'variable declaration' || nextType == 'assignment expression') && line[5] == nextScope) {
+        return content + line[4] + '\n';
+    }
+    else if(line[1] == 'return statement'){
+        vertices.push(['op' + opIndex, 'operation', line[4], false, line[5], '']);
+        line[0] = 'op' + opIndex;
+        return '';
+    }
+    else {
+        content += line[4];
+        vertices.push(['op' + opIndex, 'operation', content, false, line[5], '']);
+        line[0] = 'op' + opIndex;
+        return '';
     }
 };
 
 const parseVertices = () => {
     let result = '';
     vertices.forEach(line => {
-        result += line[1] + '=>' + line[2] + ': ' + line[3] + '\n';
+        result += line[0] + '=>' + line[1] + ': ' + line[2] + '\n';
     });
     return result;
 };
@@ -141,47 +197,47 @@ const getWhile = (scope) => {
 };
 
 const colorNodes = () => {
-    vertices[0][6] = 'green';
-    for (let i = 0; i < edges.length-1; i++) {
+    vertices[0][5] = 'green';
+    for (let i = 0; i < edges.length; i++) {
         let src = vertices[getNodeIndex(edges[i][0])];
         let dest = vertices[getNodeIndex(edges[i][1])];
-        if(src[2] == 'condition' && src[6] == 'green'){
+        if (src[1] == 'condition' && src[5] == 'green') {
             colorCondition(edges[i][0], dest);
         }
-        else{
-            if(src[6] == 'green')
-                dest[6] = 'green';
+        else {
+            if (src[5] == 'green')
+                dest[5] = 'green';
         }
     }
     vertices.forEach(line => {
-        if (line[6] == 'green') line[3] += '|green';
+        if (line[5] == 'green') line[2] += '|green';
     });
 };
 
 const getNodeIndex = (name) => {
     name = name.indexOf('(') != -1 ? name.substring(0, name.indexOf('(')) : name;
     for (let i = 0; i < vertices.length; i++) {
-        if (vertices[i][1] == name)
+        if (vertices[i][0] == name)
             return i;
     }
 };
 
 const colorCondition = (cond, dest) => {
-    let path = cond.indexOf('yes') == -1? 'no' : 'yes';
-    let value = vertices[getNodeIndex(cond)][4];
-    if(value && path == 'yes' || !value && path == 'no'){
-        dest[6] = 'green';
+    let path = cond.indexOf('yes') == -1 ? false : true;
+    let value = vertices[getNodeIndex(cond)][3];
+    if (path == value) {
+        dest[5] = 'green';
     }
 };
 
 const codeToArray = (codeToParse, vectorToParse) => {
     input = parseInput(vectorToParse, ';');
     condDict = {};
-    var tableData = [];
+    //var tableData = [];
     statTable = [];
     depth = 0;
     var parsedObject = esprima.parseScript(codeToParse, { loc: true });
-    tableData = jsonToArray(parsedObject.body[0], tableData);
+    /*tableData =*/ jsonToArray(parsedObject.body[0], /*tableData*/[]);
     console.log(statTable);
     return parsedObject;
 };
@@ -221,7 +277,7 @@ const functionHandler = (jsonObject, table) => {
 
 const whileHandler = (jsonObject, table) => {
     var row = [];
-    row.push(jsonObject.loc.start.line);
+    row.push(null);
     row.push('while statement');
     row.push('');
     row.push(escodegen.generate(jsonObject.test));
@@ -240,36 +296,23 @@ const whileHandler = (jsonObject, table) => {
 };
 
 const ifHandler = (jsonObject, table) => {
-    var row = [];
-    row.push(jsonObject.loc.start.line);
+    var row = []; row.push(jsonObject.loc.start.line);
     row.push('if statement'); row.push(jsonObject.alternate !== null);
-    row.push(escodegen.generate(jsonObject.test));
-    row.push('');
-    row.push(depth);
-    statTable.push(row);
-    let oldTable = Array.from(table);
-    condExtract(jsonObject, table);
+    row.push(escodegen.generate(jsonObject.test)); row.push('');
+    row.push(depth); statTable.push(row);
+    let oldTable = Array.from(table); condExtract(jsonObject, table);
     condDict[jsonObject.loc.start.line] = { cond: jsonObject.test, value: evalCond(jsonObject.test, table) };
     depth++;
-    jsonObject.consequent.body === undefined ? jsonToArray(jsonObject.consequent, table) :
-        jsonObject.consequent.body = removeStatements(jsonObject.consequent.body, table);
-    table = oldTable;
-    depth--;
+    jsonObject.consequent.body === undefined ? jsonToArray(jsonObject.consequent, table) : jsonObject.consequent.body = removeStatements(jsonObject.consequent.body, table);
+    table = oldTable; depth--;
     if (jsonObject.alternate !== null) {
-        row = [];
-        row.push(jsonObject.alternate.loc.start.line);
-        row.push('else statement');
-        row.push(''); row.push(''); row.push('');
-        row.push(depth);
-        statTable.push(row);
-        table = oldTable;
-        depth++;
-        jsonObject.alternate.body === undefined ? jsonToArray(jsonObject.alternate, table) :
-            jsonObject.alternate.body = removeStatements(jsonObject.alternate.body, table);
+        row = []; row.push(null);
+        row.push('else statement'); row.push(''); row.push(''); row.push('');
+        row.push(depth); statTable.push(row); table = oldTable; depth++;
+        jsonObject.alternate.body === undefined ? jsonToArray(jsonObject.alternate, table) : jsonObject.alternate.body = removeStatements(jsonObject.alternate.body, table);
         depth--;
     }
-    table = oldTable;
-    return table;
+    table = oldTable; return table;
 };
 
 const condExtract = (jsonObject, table) => {
@@ -292,15 +335,10 @@ const identifierExtract = (jsonObject, table) => {
 };
 
 const assignmentHandler = (jsonObject, table) => {
-    var row = [];
-    row.push(jsonObject.loc.start.line);
-    row.push('assignment expression');
-    row.push(jsonObject.expression.left.name);
-    row.push('');
-    row.push(escodegen.generate(jsonObject).substr(0, escodegen.generate(jsonObject).length - 1));
-    row.push(depth);
-    statTable.push(row);
-    row = [];
+    var row = []; row.push(null);
+    row.push('assignment expression'); row.push(jsonObject.expression.left.name);
+    row.push(''); row.push(escodegen.generate(jsonObject).substr(0, escodegen.generate(jsonObject).length - 1));
+    row.push(depth); statTable.push(row); row = [];
     row.push(jsonObject.loc.start.line); row.push(jsonObject.loc.start.column);
     row.push('assignment'); row.push(jsonObject.expression.left.name);
     row.push(getVersion(jsonObject.expression.left.name, 'assignment', table));
@@ -330,25 +368,19 @@ const assExtract = (jsonObject, table) => {
 const vardecHandler = (jsonObject, table) => {
     var row = [];
     jsonObject.declarations.forEach(vardec => {
-        row.push(vardec.id.loc.start.line);
-        row.push('variable declaration');
-        row.push(vardec.id.name);
-        row.push('');
+        row.push(null); row.push('variable declaration');
+        row.push(vardec.id.name); row.push('');
         row.push(vardec.init === null ? '' : escodegen.generate(vardec));
-        row.push(depth);
-        statTable.push(row);
+        row.push(depth); statTable.push(row);
         row = [];
-        row.push(vardec.id.loc.start.line);
-        row.push(vardec.id.loc.start.column);
-        row.push('local');
-        row.push(vardec.id.name);
+        row.push(vardec.id.loc.start.line); row.push(vardec.id.loc.start.column);
+        row.push('local'); row.push(vardec.id.name);
         row.push(1);
         vardec.init == null ? row.push(null) : row.push(vardec.init);
         row.push(null);
         table.push(row);
-        if (vardec.init != null) {
+        if (vardec.init != null)
             vardecLogic(vardec, table);
-        }
         row = [];
     });
     return table;
@@ -391,10 +423,8 @@ const paramHandler = (jsonObject, value, table) => {
 
 const returnHandler = (jsonObject, table) => {
     var row = [];
-    row.push(jsonObject.loc.start.line);
-    row.push('return statement');
-    row.push('');
-    row.push('');
+    row.push(null); row.push('return statement');
+    row.push(''); row.push('');
     row.push(escodegen.generate(jsonObject).substr(0, escodegen.generate(jsonObject).length - 1));
     row.push(depth);
     statTable.push(row);
@@ -546,10 +576,6 @@ const typeCheck = (type) => {
     return (type == 'local' || type == 'param' || type == 'global');
 };
 
-const typeCheck2 = (type) => {
-    return (type == 'cond' || type == 'return' || type == 'property');
-};
-
 const getVersion = (name, type, table) => {
     let recurciveOccurence = true;
     for (let i = table.length - 1; i >= 0; i--) {
@@ -561,7 +587,7 @@ const getVersion = (name, type, table) => {
     }
 };
 
-const figureAddition = (recurciveOccurence, type, occurence) => {
+const figureAddition = (recurciveOccurence, type) => {
     return checkEval(type) ? 1 : 0;
     //typeCheck2(type) ? 0 :
     //    recurciveOccurence && occurence != 'param' ? -1 : 0;
