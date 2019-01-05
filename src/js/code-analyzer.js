@@ -19,11 +19,6 @@ const codeToGraph = (table) => {
     if (color) colorNodes();
     let vertStr = parseVertices();
     let edgStr = parseEdges();
-    console.log(table);
-    console.log(vertices);
-    console.log(edges);
-    console.log(vertStr);
-    console.log(edgStr);
     result = vertStr + edgStr;
     return result;
 };
