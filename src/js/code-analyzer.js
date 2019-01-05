@@ -9,26 +9,31 @@ var vertices;
 var edges;
 var color;
 
-const codeToGraph = () => {
+const codeToGraph = (table) => {
     let result = '';
     vertices = [];
     edges = [];
     color = true;
-    getVertices();
-    getEdges();
+    getVertices(table);
+    getEdges(table);
     if (color) colorNodes();
     let vertStr = parseVertices();
     let edgStr = parseEdges();
+    console.log(table);
+    console.log(vertices);
+    console.log(edges);
+    console.log(vertStr);
+    console.log(edgStr);
     result = vertStr + edgStr;
     return result;
 };
 
-const getVertices = () => {
+const getVertices = (table) => {
     let opIndex = 1, condIndex = 1, content = '';
-    for (let i = 0; i < statTable.length; i++) {
-        let line = statTable[i];
-        let nextType = i < statTable.length - 1 ? statTable[i + 1][1] : line[1];
-        let nextScope = i < statTable.length - 1 ? statTable[i + 1][5] : -1;
+    for (let i = 0; i < table.length; i++) {
+        let line = table[i];
+        let nextType = i < table.length - 1 ? table[i + 1][1] : line[1];
+        let nextScope = i < table.length - 1 ? table[i + 1][5] : -1;
         if (line[1] == 'while statement' || line[1] == 'if statement') {
             condVertex(line, condIndex, opIndex);
             condIndex++;
@@ -40,14 +45,14 @@ const getVertices = () => {
     }
 };
 
-const getEdges = () => {
-    for (let i = 0; i < statTable.length; i++) {
-        let line = statTable[i];
+const getEdges = (table) => {
+    for (let i = 0; i < table.length; i++) {
+        let line = table[i];
         if (checkCond(line)) {
-            getCondEdges(i);
+            getCondEdges(table, i);
         }
         else if (checkOp(line)) {
-            let dest = getNext(i, line[5]);
+            let dest = getNext(table, i, line[5]);
             if (dest != null)
                 edges.push([line[0], dest]);
         }
@@ -62,101 +67,93 @@ const checkOp = (line) => {
     return line[0] != null && (line[1] == 'variable declaration' || line[1] == 'assignment expression');
 };
 
-const getCondEdges = (index) => {
-    let yes = getYes(index), line = statTable[index];
-    let cont = getContinuation(index, line[5]);
-    let lastYesBlock = getLastBlockOnScope(index + 1);
+const getCondEdges = (table, index) => {
+    let yes = getYes(table, index), line = table[index];
+    let cont = getContinuation(table, index, line[5]);
+    let lastYesBlock = getLastBlockOnScope(table, index + 1);
     edges.push([line[0] + '(yes)', yes]);
     if (line[2]) {
-        let no = getNo(index, line[5]);
+        let no = getNo(table, index, line[5]);
         edges.push([line[0] + '(no, bottom)', no]);
-        let elseIndex = getElseIndex(index);
-        let lastNoBlock = getLastBlockOnScope(elseIndex + 1);
+        let elseIndex = getElseIndex(table, index);
+        let lastNoBlock = getLastBlockOnScope(table, elseIndex + 1);
         edges.push([lastNoBlock, cont]);
     }
     else {
         edges.push([line[0] + '(no)', cont]);
     }
-    if (statTable[index][1] == 'while statement')
-        edges.push([lastYesBlock, line[0]]);
+    if (table[index][1] == 'while statement')
+        edges.push([lastYesBlock+'(left)', line[0]]);
     else
         edges.push([lastYesBlock, cont]);
 };
 
-const getYes = (index) => {
-    for (let i = index + 1; i < statTable.length; i++) {
-        if (statTable[i][0] != null)
-            return statTable[i][0];
+const getYes = (table, index) => {
+    for (let i = index + 1; i < table.length; i++) {
+        if (table[i][0] != null)
+            return table[i][0];
     }
 };
 
-const getNo = (index, scope) => {
-    for (let i = index + 1; i < statTable.length; i++) {
-        if (checkNo(i, scope)) {
+const getNo = (table, index, scope) => {
+    for (let i = index + 1; i < table.length; i++) {
+        if (checkNo(table, i, scope)) {
             index = i;
             break;
         }
     }
-    for (let i = index; i < statTable.length; i++) {
-        if (statTable[i][0] != null)
-            return statTable[i][0];
+    for (let i = index; i < table.length; i++) {
+        if (table[i][0] != null)
+            return table[i][0];
     }
 };
 
-const checkNo = (i, scope) => {
-    return statTable[i][1] == 'else statement' && statTable[i][5] == scope;
+const checkNo = (table, i, scope) => {
+    return table[i][1] == 'else statement' && table[i][5] == scope;
 };
 
-const getContinuation = (index, scope) => {
-    for (let i = index + 1; i < statTable.length; i++) {
-        if (statTable[i][0] != null && statTable[i][1] != 'else statement' && statTable[i][5] <= scope)
-            return statTable[i][0];
+const getContinuation = (table, index, scope) => {
+    for (let i = index + 1; i < table.length; i++) {
+        if (table[i][0] != null && table[i][1] != 'else statement' && table[i][5] <= scope)
+            return table[i][0];
     }
 };
 
-const getLastBlockOnScope = (index) => {
-    let scope = statTable[index][5];
+const getLastBlockOnScope = (table, index) => {
+    let scope = table[index][5];
     let lastIndex = index;
-    for (let i = index + 1; i < statTable.length; i++) {
-        if (statTable[i][0] != null) {
-            if (statTable[i][5] == scope)
+    for (let i = index + 1; i < table.length; i++) {
+        if (table[i][0] != null) {
+            if (table[i][5] == scope)
                 lastIndex = i;
-            else if (statTable[i][5] < scope) {
-                return addNo(statTable[lastIndex][1], statTable[lastIndex][0]);
+            else if (table[i][5] < scope) {
+                return addNo(table[lastIndex][1], table[lastIndex][0]);
             }
         }
-        else if (statTable[i][1] == 'else statement')
-            return addNo(statTable[lastIndex][1], statTable[lastIndex][0]);
+        else if (table[i][1] == 'else statement')
+            return addNo(table[lastIndex][1], table[lastIndex][0]);
     }
-    return statTable[index][0];
-};
-
-const advance = (i, scope, lastIndex) => {
-    if (statTable[i][5] == scope)
-        return i;
-    else if (statTable[i][5] < scope) {
-        return addNo(statTable[lastIndex][1], statTable[lastIndex][0]);
-    }
+    return table[index][0];
 };
 
 const addNo = (type, name) => {
     return type == 'if statement' || type == 'while statement' ? name + '(no)' : name;
 };
 
-const getElseIndex = (index) => {
-    let scope = statTable[index][5];
-    for (let i = index; i < statTable.length; i++) {
-        if (statTable[i][1] == 'else statement' && statTable[i][5] == scope)
+const getElseIndex = (table, index) => {
+    let scope = table[index][5];
+    for (let i = index; i < table.length; i++) {
+        if (table[i][1] == 'else statement' && table[i][5] == scope)
             return i;
     }
 };
 
-const getNext = (index, scope) => {
-    for (let i = index + 1; i < statTable.length; i++) {
-        if (statTable[i][5] != scope)
+const getNext = (table, index, scope) => {
+    for (let i = index + 1; i < table.length; i++) {
+        if (table[i][5] != scope)
             return null;
-        if (statTable[i][0] != null)
-            return statTable[i][0];
+        if (table[i][0] != null)
+            return table[i][0];
     }
 };
 
@@ -641,6 +638,11 @@ const removeFromArray = (arr, index) => {
     }
     return result;
 };
+
+const getTable = () => {
+    return statTable;
+};
 export { jsonToArray };
 export { codeToArray };
 export { codeToGraph };
+export { getTable };
