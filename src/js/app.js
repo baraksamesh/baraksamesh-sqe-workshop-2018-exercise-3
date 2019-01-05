@@ -14,6 +14,6 @@ $(document).ready(function () {
         $('#td2').empty();
         $('#td2').append(escodegen.generate(evaluatedCode, { verbatim: 'color' }));
         $('#graph').empty();
-        flowchart.parse(graphStr).drawSVG('graph', { 'flowstate': { 'green': { 'fill': '#2FFB35' } }, 'yes-text': 'T', 'no-text': 'F' });
+        flowchart.parse(graphStr).drawSVG('graph', {'flowstate': { 'green': { 'fill': '#2FFB35' } }, 'yes-text': 'T', 'no-text': 'F' });
     });
 });
