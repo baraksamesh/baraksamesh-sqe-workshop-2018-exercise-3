@@ -124,4 +124,34 @@ describe('The javascript parser', () => {
         'op2->op5\n'+ 'cond2(yes)->op3\n'+ 'cond2(no, bottom)->op4\n'+
         'op4->op5\n'+ 'op3->op5\n' );
     });
+
+    it('creating graph with while', () => {
+        let code = 'function foo(x, y, z){\n'+
+            'let a = x + 1;\n'+
+            'let b = a + y;\n'+
+            'let c = 0;\n'+
+            'while (a < z) {\n'+
+            '    c = a + b;\n'+
+            '   z = c * 2;\n'+
+            '}\n'+
+            'return z;\n'+
+        '}';
+        let evaluatedCode = ca.codeToArray(code, '1;2;3');
+        assert.equal(ca.codeToGraph(ca.getTable()),
+        'op1=>operation: (1)\n'+
+        'a = x + 1\n'+
+        'b = a + y\n'+
+        'c = 0\n'+
+        'cond1=>condition: (2)\n'+
+        'a < z\n'+
+        'op2=>operation: (3)\n'+
+        'c = a + b\n'+
+        'z = c * 2\n'+
+        'op3=>operation: (4)\n'+
+        'return z\n'+
+        'op1->cond1\n'+
+        'cond1(yes)->op2\n'+
+        'cond1(no)->op3\n'+
+        'op2(left)->cond1\n');
+    });
 });
